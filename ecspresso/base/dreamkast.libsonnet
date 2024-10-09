@@ -1,5 +1,6 @@
 local common = import './common.libsonnet';
 local const = import './const.libsonnet';
+local util = import './util.libsonnet';
 
 {
   serviceDef(
@@ -27,15 +28,16 @@ local const = import './const.libsonnet';
       ],
     },
 
-  # https://docs.aws.amazon.com/ja_jp/AmazonECS/latest/developerguide/task_definition_parameters.html
+  // https://docs.aws.amazon.com/ja_jp/AmazonECS/latest/developerguide/task_definition_parameters.html
   taskDef(
     family,
+    cpu=512,
+    memory=1024,
     taskRoleName,
     imageTag,
     region,
     dkApiEndpoint,
     dkWeaverEndpoint,
-    lokiEndpoint,
     rdbInternalEndpoint,
     redisInternalEndpoint,
     s3BucketName,
@@ -45,11 +47,16 @@ local const = import './const.libsonnet';
     railsAppSecretManagerName,
     rdsSecretManagerName,
     dreamkastSecretManagerName,
-    mackerelSecretManagerName,
     enableLogging=false,
+    enableLokiLogging=false,
+    lokiEndpoint='',
+    enableMackerelSidecar=false,
+    mackerelSecretManagerName='',
     reviewapp=false,
   ):: {
     local root = self,
+    assert (enableLogging && enableLokiLogging) != true,
+
     //
     // Templates
     //
@@ -61,7 +68,8 @@ local const = import './const.libsonnet';
       command: [],
 
       cpu: error 'must be overridden',
-      memoryReservation: error 'must be overridden',
+      memory: error 'must be overridden',
+      //memoryReservation: error 'must be overridden',
       essential: false,
 
       environment: [
@@ -95,11 +103,16 @@ local const = import './const.libsonnet';
         },
         {
           name: 'DREAMKAST_NAMESPACE',
-          value: if family == 'dreamkast-prd-ui' then 'dreamkast'
-          else if family == 'dreamkast-stg-ui' then 'dreamkast-staging'
+          value: if family == 'dreamkast-prd-dk' then 'dreamkast'
+          else if family == 'dreamkast-stg-dk' then 'dreamkast-staging'
           else family,
         },
-      ],
+      ] + if reviewapp == true then [
+        {
+          name: 'REVIEW_APP',
+          value: 'true',
+        },
+      ] else [],
       secrets: [
         // from rails-app-secret Secret
         {
@@ -144,41 +157,59 @@ local const = import './const.libsonnet';
     executionRoleArn: 'arn:aws:iam::%s:role/%s' % [const.accountID, const.executionRoleName],
     taskRoleArn: 'arn:aws:iam::%s:role/%s' % [const.accountID, taskRoleName],
     family: family,
-    cpu: '512',
-    memory: '1024',
+    cpu: '%s' % [cpu],
+    memory: '%s' % [memory],
     networkMode: 'awsvpc',
     requiresCompatibilities: ['FARGATE'],
     volumes: [],
     containerDefinitions: [
+      //
+      // container: dreamkast-initdb
+      //
       root.containerDefinitionCommon {
         name: 'initdb',
         entryPoint: ['/bin/bash', '-c'],
         command: ['bundle exec rails db:migrate; bundle exec rails db:seed;'],
-        cpu: 64,
-        memoryReservation: 128,
-        dependsOn: [
+        cpu: 0,
+        memory: memory,
+        dependsOn: if enableLokiLogging then [
           {
             containerName: 'log_router',
             condition: 'START',
           },
-        ]
+        ] else [],
       } + if enableLogging then {
+        logConfiguration: {
+          logDriver: 'awslogs',
+          options: {
+            'awslogs-group': family,
+            'awslogs-create-group': 'true',
+            'awslogs-region': region,
+            'awslogs-stream-prefix': 'dreamkast',
+          },
+        },
+      } else if enableLokiLogging then {
+        assert lokiEndpoint != '',
         logConfiguration: {
           logDriver: 'awsfirelens',
           options: {
-            'RemoveKeys': 'container_id,ecs_task_arn',
-            'LineFormat': 'key_value',
-            'Labels': '{job=\"%s\"}' % [family],
-            'LabelKeys': 'container_name,ecs_task_definition,source,ecs_cluster',
-            'Url': '%s/loki/api/v1/push' % [lokiEndpoint],
-            'Name': 'grafana-loki'
+            RemoveKeys: 'container_id,ecs_task_arn',
+            LineFormat: 'key_value',
+            Labels: '{job="%s"}' % [family],
+            LabelKeys: 'container_name,ecs_task_definition,source,ecs_cluster',
+            Url: '%s/loki/api/v1/push' % [lokiEndpoint],
+            Name: 'grafana-loki',
           },
         },
       } else {},
+      //
+      // container: dreamkast
+      //
       root.containerDefinitionCommon {
         name: 'dreamkast',
-        cpu: 256,
-        memoryReservation: 512,
+        cpu: util.mainContainerCPU(cpu, enableLokiLogging, enableMackerelSidecar),
+        memory: util.mainContainerMemory(memory, enableLokiLogging, enableMackerelSidecar),
+        memoryReservation: util.mainContainerMemoryReservation(memory, enableLokiLogging, enableMackerelSidecar),
         essential: true,
         environment: root.containerDefinitionCommon.environment + [
           {
@@ -219,69 +250,97 @@ local const = import './const.libsonnet';
         ],
       } + if enableLogging then {
         logConfiguration: {
+          logDriver: 'awslogs',
+          options: {
+            'awslogs-group': family,
+            'awslogs-create-group': 'true',
+            'awslogs-region': region,
+            'awslogs-stream-prefix': 'dreamkast',
+          },
+        },
+      } else if enableLokiLogging then {
+        assert lokiEndpoint != '',
+        logConfiguration: {
           logDriver: 'awsfirelens',
           options: {
-            'RemoveKeys': 'container_id,ecs_task_arn',
-            'LineFormat': 'key_value',
-            'Labels': '{job=\"%s\"}' % [family],
-            'LabelKeys': 'container_name,ecs_task_definition,source,ecs_cluster',
-            'Url': '%s/loki/api/v1/push' % [lokiEndpoint],
-            'Name': 'grafana-loki'
+            RemoveKeys: 'container_id,ecs_task_arn',
+            LineFormat: 'key_value',
+            Labels: '{job="%s"}' % [family],
+            LabelKeys: 'container_name,ecs_task_definition,source,ecs_cluster',
+            Url: '%s/loki/api/v1/push' % [lokiEndpoint],
+            Name: 'grafana-loki',
           },
         },
       } else {},
-      root.containerDefinitionCommon {
-        name: 'log_router',
-        image: 'grafana/fluent-bit-plugin-loki:2.9.10',
-        cpu: 0,
-        memoryReservation: 192,
-        environment: [],
-        secrets: [],
-        firelensConfiguration: {
-          type: 'fluentbit',
-          options: {
-            'enable-ecs-log-metadata': 'true',
-          }
-        }
-      } + if enableLogging then {
-        logConfiguration: {
-          logDriver: 'awslogs',
-          options: {
-            'awslogs-group': family,
-            'awslogs-create-group': 'true',
-            'awslogs-region': region,
-            'awslogs-stream-prefix': 'firelens',
+    ] + (
+      if enableLokiLogging then [
+        //
+        // container: fluent-bit-plugin-loki
+        //
+        assert lokiEndpoint != '';
+        root.containerDefinitionCommon {
+          name: 'log_router',
+          user: '0',
+          image: 'grafana/fluent-bit-plugin-loki:2.9.10',
+          cpu: const.fluentBitLokiResources.cpu,
+          memory: const.fluentBitLokiResources.memory,
+          memoryReservation: const.fluentBitLokiResources.memoryReservation,
+          environment: [],
+          secrets: [],
+          firelensConfiguration: {
+            type: 'fluentbit',
+            options: {
+              'enable-ecs-log-metadata': 'true',
+            },
           },
-        },
-      } else {},
-      root.containerDefinitionCommon {
-        name: 'mackerel-container-agent',
-        image: 'mackerel/mackerel-container-agent:latest',
-        cpu: 0,
-        memoryReservation: 192,
-        environment: [
-          {
-            name: 'MACKEREL_CONTAINER_PLATFORM',
-            value: 'ecs',
+        } + if enableLogging then {
+          logConfiguration: {
+            logDriver: 'awslogs',
+            options: {
+              'awslogs-group': family,
+              'awslogs-create-group': 'true',
+              'awslogs-region': region,
+              'awslogs-stream-prefix': 'firelens',
+            },
           },
-        ],
-        secrets: [
-          {
-            valueFrom: 'arn:aws:secretsmanager:%s:%s:secret:%s' % [region, const.accountID, mackerelSecretManagerName],
-            name: 'MACKEREL_APIKEY',
+        } else {},
+      ] else []
+    ) + (
+      if enableMackerelSidecar then [
+        //
+        // container: mackerel-container-agent
+        //
+        assert mackerelSecretManagerName != '';
+        root.containerDefinitionCommon {
+          name: 'mackerel-container-agent',
+          image: 'mackerel/mackerel-container-agent:latest',
+          cpu: const.mackerelSidecarResources.cpu,
+          memory: const.mackerelSidecarResources.memory,
+          memoryReservation: const.mackerelSidecarResources.memoryReservation,
+          environment: [
+            {
+              name: 'MACKEREL_CONTAINER_PLATFORM',
+              value: 'ecs',
+            },
+          ],
+          secrets: [
+            {
+              valueFrom: 'arn:aws:secretsmanager:%s:%s:secret:%s' % [region, const.accountID, mackerelSecretManagerName],
+              name: 'MACKEREL_APIKEY',
+            },
+          ],
+        } + if enableLogging then {
+          logConfiguration: {
+            logDriver: 'awslogs',
+            options: {
+              'awslogs-group': family,
+              'awslogs-create-group': 'true',
+              'awslogs-region': region,
+              'awslogs-stream-prefix': 'mackerel-agent',
+            },
           },
-        ],
-      } + if enableLogging then {
-        logConfiguration: {
-          logDriver: 'awslogs',
-          options: {
-            'awslogs-group': family,
-            'awslogs-create-group': 'true',
-            'awslogs-region': region,
-            'awslogs-stream-prefix': 'mackerel-agent',
-          },
-        },
-      } else {},
-    ],
+        } else {},
+      ] else []
+    ),
   },
 }
