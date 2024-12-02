@@ -1,4 +1,6 @@
 {
+  cluster: 'dreamkast-prod',
+  executionRoleName: 'dreamkast-prod-ecs-task-execution-role',
   externalEndpoints: {
     dk: 'https://event.cloudnativedays.jp',
     dkApi: 'https://api.cloudnativedays.jp',
@@ -6,8 +8,8 @@
     loki: 'https://loki.cloudnativedays.jp',
   },
   imageTags: {
-    dreamkast_ecs: 'v4.11.1',
-    dreamkast_ui: 'v2.11.4',
+    dreamkast_ecs: 'v4.11.18',
+    dreamkast_ui: 'v2.11.10',
     dreamkast_weaver: 'v0.3.0',
     seaman: '1.0.4',
   },
@@ -37,7 +39,7 @@
     releasebot: 'dreamkast-releasebot-zHsXND',
   },
   sentry: {
-    dsn: 'https://ec7eb42486bea4e950a48ef1c943510c@sentry.cloudnativedays.jp/2',
+    dsn: 'https://c0f89402e768b327ff5d300c44cb8215@stg.sentry.cloudnativedays.jp/3',
   },
   serviceDiscovery: {
     dk: 'srv-x5wza5r7otdcwmt3',
@@ -46,4 +48,5 @@
     fifo: 'dreamkast-prod-fifo-queue',
     mail: 'dreamkast-prod-mail-queue',
   },
+  taskTargetRoleName: 'dreamkast-prod-ecs-scheduled-task-target-role',
 }

@@ -1,4 +1,6 @@
 {
+  cluster: 'dreamkast-stg',
+  executionRoleName: 'dreamkast-dev-ecs-task-execution-role',
   externalEndpoints: {
     dk: 'https://staging.dev.cloudnativedays.jp',
     dkApi: 'https://api.stg.cloudnativedays.jp',
@@ -6,9 +8,9 @@
     loki: 'https://stg.loki.cloudnativedays.jp',
   },
   imageTags: {
-    dreamkast_ecs: '05fb11bd2ed730abefc54aa2ad75d647f8aee1e7',
-    dreamkast_ui: 'ba6ba602933b88020f325e115d331029f3802247',
-    dreamkast_weaver: '3345e11eefc08d2d3fb6ba822950e4bf68e2fa69',
+    dreamkast_ecs: 'b4738fe49870a934474dc0b4adef71996c671182',
+    dreamkast_ui: 'f3741cbabb63bfd1b11042c9dc72facd8ac3edc6',
+    dreamkast_weaver: '0ab27f46ebc878aa8a6c258f723c401bf752ca28',
     redis: '6.0',
   },
   internalEndpoints: {
@@ -45,4 +47,5 @@
   sqs: {
     fifo: 'dreamkast-stg-fifo-queue',
   },
+  taskTargetRoleName: 'dreamkast-dev-ecs-scheduled-task-target-role',
 }

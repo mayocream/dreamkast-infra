@@ -13,7 +13,9 @@ local const = import './const.libsonnet';
       replicas,
       subnetIDs,
       securityGroupID,
-    ),
+    ) + {
+      healthCheckGracePeriodSeconds: 0,
+    },
 
   // https://docs.aws.amazon.com/ja_jp/AmazonECS/latest/developerguide/task_definition_parameters.html
   taskDef(
@@ -21,6 +23,7 @@ local const = import './const.libsonnet';
     cpu=256,
     memory=512,
     taskRoleName,
+    executionRoleName,
     imageTag,
     region,
     rdbInternalEndpoint,
@@ -35,7 +38,7 @@ local const = import './const.libsonnet';
     enableLogging=false,
     reviewapp=false,
   ):: {
-    executionRoleArn: 'arn:aws:iam::%s:role/%s' % [const.accountID, const.executionRoleName],
+    executionRoleArn: 'arn:aws:iam::%s:role/%s' % [const.accountID, executionRoleName],
     taskRoleArn: 'arn:aws:iam::%s:role/%s' % [const.accountID, taskRoleName],
     family: family,
     cpu: '%s' % [cpu],
@@ -53,6 +56,7 @@ local const = import './const.libsonnet';
         memory: memory,
         memoryReservation: memory,
         essential: true,
+        restartPolicy: { enabled: true },
         environment: [
           {
             name: 'RAILS_ENV',
@@ -100,6 +104,10 @@ local const = import './const.libsonnet';
             else if family == 'dreamkast-stg-ui' then 'dreamkast-staging'
             else family,
           },
+          {
+            name: 'BROWSER_PATH',
+            value: '/usr/bin/google-chrome',
+          },
         ],
         secrets: [
           // from rails-app-secret Secret
@@ -119,6 +127,10 @@ local const = import './const.libsonnet';
           {
             valueFrom: 'arn:aws:secretsmanager:%s:%s:secret:%s:AUTH0_DOMAIN::' % [region, const.accountID, dreamkastSecretManagerName],
             name: 'AUTH0_DOMAIN',
+          },
+          {
+            valueFrom: 'arn:aws:secretsmanager:%s:%s:secret:%s:PRINTNODE_API_KEY::' % [region, const.accountID, dreamkastSecretManagerName],
+            name: 'PRINTNODE_API_KEY',
           },
         ] + if reviewapp == false then [
           // from rds-secret Secret

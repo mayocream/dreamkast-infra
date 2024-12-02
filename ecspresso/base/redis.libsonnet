@@ -15,7 +15,9 @@ local const = import './const.libsonnet';
       subnetIDs,
       securityGroupID,
       serviceDiscoveryID,
-    ),
+    ) + {
+      healthCheckGracePeriodSeconds: 0,
+    },
 
   // https://docs.aws.amazon.com/ja_jp/AmazonECS/latest/developerguide/task_definition_parameters.html
   taskDef(
@@ -23,11 +25,12 @@ local const = import './const.libsonnet';
     cpu=256,
     memory=512,
     taskRoleName,
+    executionRoleName,
     imageTag,
     region,
     enableLogging=false,
   ):: {
-    executionRoleArn: 'arn:aws:iam::%s:role/%s' % [const.accountID, const.executionRoleName],
+    executionRoleArn: 'arn:aws:iam::%s:role/%s' % [const.accountID, executionRoleName],
     taskRoleArn: 'arn:aws:iam::%s:role/%s' % [const.accountID, taskRoleName],
     family: family,
     cpu: '%s' % [cpu],
@@ -42,6 +45,7 @@ local const = import './const.libsonnet';
         command: [],
         entryPoint: [],
         essential: true,
+        restartPolicy: { enabled: true },
         cpu: cpu,
         memory: memory,
         memoryReservation: memory,

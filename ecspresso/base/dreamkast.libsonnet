@@ -34,6 +34,7 @@ local util = import './util.libsonnet';
     cpu=512,
     memory=1024,
     taskRoleName,
+    executionRoleName,
     imageTag,
     region,
     dkApiEndpoint,
@@ -71,6 +72,7 @@ local util = import './util.libsonnet';
       memory: error 'must be overridden',
       //memoryReservation: error 'must be overridden',
       essential: false,
+      restartPolicy: { enabled: true },
 
       environment: [
         {
@@ -103,7 +105,7 @@ local util = import './util.libsonnet';
         },
         {
           name: 'DREAMKAST_NAMESPACE',
-          value: if family == 'dreamkast-prd-dk' then 'dreamkast'
+          value: if family == 'dreamkast-prod-dk' then 'dreamkast'
           else if family == 'dreamkast-stg-dk' then 'dreamkast-staging'
           else family,
         },
@@ -132,6 +134,10 @@ local util = import './util.libsonnet';
           valueFrom: 'arn:aws:secretsmanager:%s:%s:secret:%s:AUTH0_DOMAIN::' % [region, const.accountID, dreamkastSecretManagerName],
           name: 'AUTH0_DOMAIN',
         },
+        {
+          valueFrom: 'arn:aws:secretsmanager:%s:%s:secret:%s:PRINTNODE_API_KEY::' % [region, const.accountID, dreamkastSecretManagerName],
+          name: 'PRINTNODE_API_KEY',
+        },
       ] + if reviewapp == false then [
         // from rds-secret Secret
         {
@@ -154,7 +160,7 @@ local util = import './util.libsonnet';
     //
     // Definitions
     //
-    executionRoleArn: 'arn:aws:iam::%s:role/%s' % [const.accountID, const.executionRoleName],
+    executionRoleArn: 'arn:aws:iam::%s:role/%s' % [const.accountID, executionRoleName],
     taskRoleArn: 'arn:aws:iam::%s:role/%s' % [const.accountID, taskRoleName],
     family: family,
     cpu: '%s' % [cpu],
